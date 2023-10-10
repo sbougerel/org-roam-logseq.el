@@ -26,7 +26,6 @@
 ;; The license of the derivative work here is MIT.
 ;;
 ;; Logseq compatibility:
-;; - put ids and titles at the tops of non-journal files
 ;; - change fuzzy links from [[PAGE]] to [[id:2324234234][PAGE]]
 ;; - change fuzzy links from [[ALIAS]] to [[id:2324234234][ALIAS]]
 ;; - also change file links to id links, provided that the links
@@ -35,6 +34,9 @@
 ;; NOTE:
 ;; - it converts the links only if they are not alias links due to a bug in Logseq:
 ;;    https://github.com/logseq/logseq/issues/9342
+;; - Used to avoid putting Ids in journal files, however this is needed for backlinks
+;;   to journal entries to work. This is also what Roam does when creating a new journal entry.
+;;   However titles entries are treated differently for journal entries
 ;;
 
 ;;; Code:
@@ -57,50 +59,49 @@
 (defun bill/ensure-file-id (file)
   "Visit an existing file, ensure it has an id, return whether the a new buffer was created"
   (setq file (f-expand file))
-  (if (bill/logseq-journal-p file)
-      ;; do nothing for journal files
-      ;; TODO double check this is actually desired behaviour
-      `(nil . nil)
-    (let* ((buf (get-file-buffer file))
-           (was-modified (buffer-modified-p buf))
-           (new-buf nil)
-           has-data
-           org
-           changed
-           sec-end)
-      (when (not buf)
-        (setq buf (find-file-noselect file))
-        (setq new-buf t))
-      (set-buffer buf)
-      (setq org (org-element-parse-buffer))
-      (setq has-data (cddr org))
-      (goto-char 1)
-      (when (not (and (eq 'section (org-element-type (nth 2 org))) (org-roam-id-at-point)))
-        ;; this file has no file id
+  (let* ((buf (get-file-buffer file))
+         (was-modified (buffer-modified-p buf))
+         (new-buf nil)
+         has-data
+         org
+         changed
+         sec-end)
+    (when (not buf)
+      (setq buf (find-file-noselect file))
+      (setq new-buf t))
+    (set-buffer buf)
+    (setq org (org-element-parse-buffer))
+    (setq has-data (cddr org))
+    (goto-char 1)
+    (when (not (and (eq 'section (org-element-type (nth 2 org))) (org-roam-id-at-point)))
+      ;; this file has no file id
+      (setq changed t)
+      (when (eq 'headline (org-element-type (nth 2 org)))
+        ;; if there's no section before the first headline, add one
+        (insert "\n")
+        (goto-char 1))
+      (org-id-get-create)
+      (setq org (org-element-parse-buffer)))
+    (when (nth 3 org)
+      (when (not (org-collect-keywords ["title"]))
+        ;; no title -- ensure there's a blank line at the section end
         (setq changed t)
-        (when (eq 'headline (org-element-type (nth 2 org)))
-          ;; if there's no section before the first headline, add one
+        (setq sec-end (org-element-property :end (nth 2 org)))
+        (goto-char (1- sec-end))
+        (when (and (not (equal "\n\n" (buffer-substring-no-properties (- sec-end 2) sec-end))))
           (insert "\n")
-          (goto-char 1))
-        (org-id-get-create)
-        (setq org (org-element-parse-buffer)))
-      (when (nth 3 org)
-        (when (not (org-collect-keywords ["title"]))
-          ;; no title -- ensure there's a blank line at the section end
-          (setq changed t)
-          (setq sec-end (org-element-property :end (nth 2 org)))
-          (goto-char (1- sec-end))
-          (when (and (not (equal "\n\n" (buffer-substring-no-properties (- sec-end 2) sec-end))))
-            (insert "\n")
-            (goto-char (1- (point)))
-            (setq org (org-element-parse-buffer)))
-          ;; in case of no title, make the title the same as the filename
-          (let ((title (file-name-sans-extension (file-name-nondirectory file))))
-            (insert (format "#+title: %s" title)))
-          ))
-      ;; ensure org-roam knows about the new id and/or title
-      (when changed (save-buffer))
-      (cons new-buf buf))))
+          (goto-char (1- (point)))
+          (setq org (org-element-parse-buffer)))
+        ;; in case of no title, make the title the same as the filename
+        (let ((title (file-name-sans-extension (file-name-nondirectory file))))
+          (if (bill/logseq-journal-p file)
+              ;; replace "_" for "-" in journal titles
+              (setq title (replace-regexp-in-string "_" "-" title)))
+          (insert (format "#+title: %s" title)))
+        ))
+    ;; ensure org-roam knows about the new id and/or title
+    (when changed (save-buffer))
+    (cons new-buf buf)))
 
 (defun bill/convert-logseq-file (buf)
   "convert fuzzy and file:../pages logseq links in the file to id links"
@@ -133,18 +134,18 @@
         (setq title (org-element-property :raw-link link))
         ;; fetch the filename by scanning the db for title and alias (in that order)
         (setq filename (caar (org-roam-db-query [:select :distinct [nodes:file]
-                                                         :from nodes
-                                                         :where (= nodes:title $s1)
-                                                         :union
-                                                         :select :distinct [nodes:file]
-                                                         :from aliases
-                                                         :left-join nodes
-                                                         :on (= aliases:node-id nodes:id)
-                                                         :where (= aliases:alias $s1)] title)))
+                                                 :from nodes
+                                                 :where (= nodes:title $s1)
+                                                 :union
+                                                 :select :distinct [nodes:file]
+                                                 :from aliases
+                                                 :left-join nodes
+                                                 :on (= aliases:node-id nodes:id)
+                                                 :where (= aliases:alias $s1)] title)))
         (setq linktext (if-let ((contents-begin (org-element-property :contents-begin link))
                                 (contents-end (org-element-property :contents-end link)))
                            (buffer-substring-no-properties contents-begin contents-end)
-                           (org-element-property :raw-link link)
+                         (org-element-property :raw-link link)
                          )))
       (when (equal "file" (org-element-property :type link))
         ;; TODO create a workaround for Logseq's bug with aliases
@@ -176,7 +177,7 @@
   (and (not (string-match-p bill/logseq-exclude-pattern (file-truename file-path)))
        (let ((content-hash (org-roam-db--file-hash file-path))
              (db-hash (caar (org-roam-db-query [:select hash :from files
-                                                        :where (= file $s1)] file-path))))
+                                                :where (= file $s1)] file-path))))
          (not (string= content-hash db-hash)))))
 
 (defun bill/modified-logseq-files ()
@@ -208,8 +209,7 @@
       (setq cur (bill/ensure-file-id file-path))
       (setq buf (cdr cur))
       (push buf bufs)
-      (when (and (not (bill/logseq-journal-p file-path))
-                 (not buf))
+      (when (not buf)
         (push file-path bad))
       (when (not (buffer-modified-p buf))
         (push buf unmodified))
