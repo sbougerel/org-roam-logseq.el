@@ -183,18 +183,24 @@
 (defun bill/modified-logseq-files ()
   (emacsql-with-transaction (org-roam-db)
     (seq-filter 'bill/roam-file-modified-p
-                (org-roam--list-files bill/logseq-folder))))
+                (append
+                 (org-roam--list-files bill/logseq-folder)
+                 (org-roam--list-files bill/logseq-journals)))))
 
 (defun bill/check-logseq ()
   (interactive)
-  (setq files (org-roam--list-files bill/logseq-folder))
+  (setq files (append
+               (org-roam--list-files bill/logseq-folder)
+               (org-roam--list-files bill/logseq-journals)))
   (message "bill/check-logseq is processing %d" (length files))
   (org-roam-logseq-patch files)
   )
 
 (defun bill/check-logseq-unsynced ()
   (interactive)
-  (setq files (org-roam--list-files bill/logseq-folder))
+  (setq files (append
+               (org-roam--list-files bill/logseq-folder)
+               (org-roam--list-files bill/logseq-journals)))
   (setq files-in-db (apply #'append (org-roam-db-query [:select file :from files])))
   (setq unsynced-files (cl-set-difference files files-in-db :test #'file-equal-p))
   (message "bill/check-logseq-unsynced is processing %d" (length unsynced-files))
