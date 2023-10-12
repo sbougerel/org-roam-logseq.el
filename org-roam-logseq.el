@@ -1,9 +1,9 @@
 ;;; org-roam-logseq.el --- Org-roam Logseq converter -*- coding: utf-8; lexical-binding: t; -*-
 
-;; Copyright (C) 2023, Ivan Danov
+;; Copyright (C) 2023, Ivan Danov, Sylvain Bougerel
 
-;; Author: Ivan Danov
-;; URL: https://github.com/idanov/org-roam-logseq.el/
+;; Author: Ivan Danov, Sylvain Bougerel (few changes)
+;; URL: https://github.com/sbougerel/org-roam-logseq.el/
 ;; Keywords: org-mode, roam, logseq
 ;; Version: 0.1.0
 ;; Package-Requires: ((org-roam "2.2.2") (cl-lib))
@@ -19,7 +19,11 @@
 
 ;; LICENSE
 ;;
-;; This code is a derivative work of
+;; This code is a fork of
+;;    https://github.com/idanov/org-roam-logseq.el/ which is
+;; licensed under GPL, so this code is also GPL.
+;;
+;; The work from Ivan Danov is a derivative work of
 ;;    https://gist.github.com/zot/ddf1a89a567fea73bc3c8a209d48f527
 ;; which is dual-licensed with MIT and GPL licenses by William R. Burdick Jr.
 ;;
@@ -32,11 +36,14 @@
 ;;   expand to file names that have ids in the roam database.
 ;;
 ;; NOTE:
-;; - it converts the links only if they are not alias links due to a bug in Logseq:
+;; - This package converts the links only if they are not alias links due to a bug in Logseq:
 ;;    https://github.com/logseq/logseq/issues/9342
-;; - Used to avoid putting Ids in journal files, however this is needed for backlinks
-;;   to journal entries to work. This is also what Roam does when creating a new journal entry.
-;;   However titles entries are treated differently for journal entries
+;;
+;; Changes by Sylvain Bougerel from the original work of Ivan Danov & William R. Burdick Jr.:
+;;
+;; - This package used to avoid putting ID in journal files, however this is needed for backlinks
+;;   to journal entries to work in Roam V2.
+;; - The hook that runs on opening a file to import it from Logseq avoids empty buffers
 ;;
 
 ;;; Code:
@@ -233,8 +240,9 @@
     nil))
 
 (defun org-roam-logseq-hook ()
-  "Process any org-roam files on accessing if they have logseq links."
-  (when (org-roam-file-p)
+  "Process any non-empty org-roam files on accessing if they have logseq links."
+  (when (and (org-roam-file-p)
+             (/= (buffer-size (current-buffer)) 0))
     (progn
       (bill/ensure-file-id (buffer-file-name (current-buffer)))
       (bill/convert-logseq-file (current-buffer)))))
