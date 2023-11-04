@@ -5,8 +5,8 @@
 ;; Author: Ivan Danov, Sylvain Bougerel (few changes)
 ;; URL: https://github.com/sbougerel/org-roam-logseq.el/
 ;; Keywords: org-mode, roam, logseq
-;; Version: 0.1.0
-;; Package-Requires: ((org-roam "2.2.2") (cl-lib))
+;; Version: 0.1.1
+;; Package-Requires: ((emacs "27.2") (org-roam "2.2.2"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -41,13 +41,22 @@
 ;;
 ;; Changes by Sylvain Bougerel from the original work of Ivan Danov & William R. Burdick Jr.:
 ;;
-;; - This package used to avoid putting ID in journal files, however this is needed for backlinks
-;;   to journal entries to work in Roam V2.
-;; - The hook that runs on opening a file to import it from Logseq avoids empty buffers
+;; - This package used to avoid putting ID in journal files, however this is
+;;   needed for backlinks to journal entries to work in Roam V2.
 ;;
+;; - The hook that runs on opening a file to import it from Logseq avoids empty
+;;   buffers.
+;;
+;; - The hook that runs on opening a file now runs on `org-mode-hook' instead.
+;;   Running it on opening a file created a dependency or `org-mode' which could
+;;   not be met on time, as `org-element' requires `org-mode'.  This could
+;;   sometimes lead to issues with running `org-mode-db-sync'.
 
 ;;; Code:
 (require 'cl-lib)
+(require 'org)
+(require 'org-element)
+(require 'org-element-ast)
 (require 'org-roam)
 
 ;; Your logseq directory should be inside your org-roam directory,
@@ -247,7 +256,7 @@
       (bill/ensure-file-id (buffer-file-name (current-buffer)))
       (bill/convert-logseq-file (current-buffer)))))
 
-(add-hook 'find-file-hook #'org-roam-logseq-hook)
+(add-hook 'org-mode-hook #'org-roam-logseq-hook)
 
 (provide 'org-roam-logseq)
 
